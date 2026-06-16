@@ -23,10 +23,12 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   int _selectedPriority = 2;
   bool _isLoading = false;
 
+  bool get isEditing => widget.task != null;
+
   @override
   void initState() {
     super.initState();
-    if (widget.task != null) {
+    if (isEditing) {
       _titleController.text = widget.task!.title;
       _descriptionController.text = widget.task!.description;
       _selectedDate = widget.task!.dueDate;
@@ -34,78 +36,89 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
   Future<void> _saveTask() async {
-    if (_titleController.text.trim().isEmpty) {
-      _showSnackBar('Please enter task title', Colors.red);
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      _showSnackBar('Please enter a task title', Colors.red);
       return;
     }
 
     setState(() => _isLoading = true);
 
-    if (widget.task != null) {
-      // Update existing task
-      final updatedTask = widget.task!.copyWith(
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        dueDate: _selectedDate,
-        priority: _selectedPriority,
-      );
-      await _taskService.updateTask(updatedTask);
-      _showSnackBar('Task updated successfully', AppColors.green);
-    } else {
-      // Create new task
-      final newTask = Task(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        dueDate: _selectedDate,
-        isCompleted: false,
-        priority: _selectedPriority,
-        createdAt: DateTime.now(),
-      );
-      await _taskService.addTask(newTask);
-      _showSnackBar('Task added successfully', AppColors.green);
-    }
+    try {
+      if (isEditing) {
+        final updatedTask = widget.task!.copyWith(
+          title: title,
+          description: _descriptionController.text.trim(),
+          dueDate: _selectedDate,
+          priority: _selectedPriority,
+        );
+        await _taskService.updateTask(updatedTask);
+        _showSnackBar('Task updated successfully!', AppColors.green);
+      } else {
+        final newTask = Task(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: title,
+          description: _descriptionController.text.trim(),
+          dueDate: _selectedDate,
+          isCompleted: false,
+          priority: _selectedPriority,
+          createdAt: DateTime.now(),
+        );
+        await _taskService.addTask(newTask);
+        _showSnackBar('Task added successfully!', AppColors.green);
+      }
 
-    setState(() => _isLoading = false);
-    Navigator.pop(context, true);
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showSnackBar('Error saving task. Please try again.', Colors.red);
+    }
   }
 
   Future<void> _deleteTask() async {
-    if (widget.task == null) return;
+    if (!isEditing) return;
 
-    showDialog(
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Task'),
-        content: const Text('Are you sure you want to delete this task?'),
+        content: Text('Are you sure you want to delete "${widget.task!.title}"?'),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() => _isLoading = true);
-              await _taskService.deleteTask(widget.task!.id);
-              _showSnackBar('Task deleted successfully', AppColors.red);
-              if (!mounted) return;
-              Navigator.pop(context, true);
-            },
+            onPressed: () => Navigator.pop(context, true),
             child: const Text('Delete', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
     );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      await _taskService.deleteTask(widget.task!.id);
+      _showSnackBar('Task deleted!', AppColors.red);
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    }
   }
 
   Future<void> _selectDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);
@@ -114,95 +127,130 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(widget.task != null ? 'Edit Task' : 'Add Task'),
+        title: Text(isEditing ? 'Edit Task' : 'New Task'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
-          if (widget.task != null)
+          if (isEditing)
             IconButton(
-              icon: const Icon(Icons.delete, color: Colors.white),
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
               onPressed: _deleteTask,
             ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSizes.padding),
+        padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Title
+            const Text('Task Title', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 8),
             CustomTextField(
               controller: _titleController,
-              label: AppStrings.taskTitle,
+              label: 'Enter task title',
               icon: Icons.title,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+
+            // Description
+            const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 8),
             CustomTextField(
               controller: _descriptionController,
-              label: AppStrings.taskDescription,
-              icon: Icons.description,
+              label: 'Enter description (optional)',
+              icon: Icons.description_outlined,
               maxLines: 4,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+
             // Due Date Picker
+            const Text('Due Date', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 8),
             InkWell(
               onTap: _selectDate,
+              borderRadius: BorderRadius.circular(AppSizes.borderRadius),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 decoration: BoxDecoration(
+                  color: Colors.white,
                   border: Border.all(color: Colors.grey.shade300),
                   borderRadius: BorderRadius.circular(AppSizes.borderRadius),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.calendar_today, color: AppColors.primary),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.calendar_today, color: AppColors.primary, size: 20),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Due Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
+                        DateFormat('EEEE, MMM dd, yyyy').format(_selectedDate),
+                        style: const TextStyle(fontSize: 15),
                       ),
                     ),
-                    const Icon(Icons.arrow_drop_down),
+                    const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+
             // Priority Selection
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Priority', style: TextStyle(fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _buildPriorityOption(1, 'Low', AppColors.green),
-                      const SizedBox(width: 12),
-                      _buildPriorityOption(2, 'Medium', AppColors.orange),
-                      const SizedBox(width: 12),
-                      _buildPriorityOption(3, 'High', AppColors.red),
-                    ],
-                  ),
-                ],
-              ),
+            const Text('Priority Level', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _buildPriorityOption(1, 'Low', Icons.arrow_downward, AppColors.green),
+                const SizedBox(width: 12),
+                _buildPriorityOption(2, 'Medium', Icons.remove, AppColors.orange),
+                const SizedBox(width: 12),
+                _buildPriorityOption(3, 'High', Icons.arrow_upward, AppColors.red),
+              ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
+
+            // Save Button
             CustomButton(
-              text: widget.task != null ? AppStrings.updateTask : AppStrings.addTask,
+              text: isEditing ? 'Update Task' : 'Add Task',
               onPressed: _saveTask,
               isLoading: _isLoading,
+            ),
+            const SizedBox(height: 16),
+
+            // Cancel Button
+            SizedBox(
+              width: double.infinity,
+              height: AppSizes.buttonHeight,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadius)),
+                ),
+                child: const Text('Cancel', style: TextStyle(fontSize: 16)),
+              ),
             ),
           ],
         ),
@@ -210,27 +258,36 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     );
   }
 
-  Widget _buildPriorityOption(int value, String label, Color color) {
+  Widget _buildPriorityOption(int value, String label, IconData icon, Color color) {
+    final isSelected = _selectedPriority == value;
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => _selectedPriority = value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: _selectedPriority == value ? color.withOpacity(0.2) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            color: isSelected ? color.withOpacity(0.15) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: _selectedPriority == value ? color : Colors.grey.shade400,
+              color: isSelected ? color : Colors.grey.shade300,
+              width: isSelected ? 2 : 1,
             ),
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: _selectedPriority == value ? color : Colors.grey.shade700,
-                fontWeight: _selectedPriority == value ? FontWeight.bold : FontWeight.normal,
+          child: Column(
+            children: [
+              Icon(icon, color: isSelected ? color : Colors.grey, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? color : Colors.grey.shade700,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 13,
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),

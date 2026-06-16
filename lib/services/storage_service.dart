@@ -4,13 +4,15 @@ import '../models/task_model.dart';
 
 class StorageService {
   static const String _tasksKey = 'tasks';
-  static const String _userKey = 'user';
+  static const String _userKey = 'user_logged_in';
+  static const String _currentUserKey = 'current_user_email';
+  static const String _registeredUsersKey = 'registered_users';
 
   // Save all tasks
   Future<void> saveTasks(List<Task> tasks) async {
     final prefs = await SharedPreferences.getInstance();
     final tasksJson = tasks.map((task) => task.toMap()).toList();
-    prefs.setString(_tasksKey, jsonEncode(tasksJson));
+    await prefs.setString(_tasksKey, jsonEncode(tasksJson));
   }
 
   // Load all tasks
@@ -25,9 +27,10 @@ class StorageService {
   }
 
   // Save user login state
-  Future<void> saveUserLoggedIn(bool isLoggedIn) async {
+  Future<void> saveUserLoggedIn(String email) async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.setBool(_userKey, isLoggedIn);
+    await prefs.setBool(_userKey, true);
+    await prefs.setString(_currentUserKey, email);
   }
 
   // Check if user is logged in
@@ -36,9 +39,79 @@ class StorageService {
     return prefs.getBool(_userKey) ?? false;
   }
 
+  // Get current logged-in user email
+  Future<String?> getCurrentUserEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_currentUserKey);
+  }
+
+  // Register a new user
+  Future<bool> registerUser(String name, String email, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_registeredUsersKey);
+    
+    Map<String, dynamic> users = {};
+    if (usersJson != null) {
+      users = Map<String, dynamic>.from(jsonDecode(usersJson));
+    }
+    
+    // Check if email already exists
+    if (users.containsKey(email)) {
+      return false; // Email already registered
+    }
+    
+    // Save user credentials
+    users[email] = {
+      'name': name,
+      'email': email,
+      'password': password,
+    };
+    
+    await prefs.setString(_registeredUsersKey, jsonEncode(users));
+    return true;
+  }
+
+  // Validate login credentials
+  Future<Map<String, String>?> loginUser(String email, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_registeredUsersKey);
+    
+    if (usersJson == null) return null;
+    
+    final users = Map<String, dynamic>.from(jsonDecode(usersJson));
+    
+    if (!users.containsKey(email)) return null;
+    
+    final userData = Map<String, dynamic>.from(users[email]);
+    if (userData['password'] != password) return null;
+    
+    return {
+      'name': userData['name'] ?? '',
+      'email': userData['email'] ?? '',
+    };
+  }
+
+  // Get registered user info
+  Future<Map<String, String>?> getUserInfo(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_registeredUsersKey);
+    
+    if (usersJson == null) return null;
+    
+    final users = Map<String, dynamic>.from(jsonDecode(usersJson));
+    if (!users.containsKey(email)) return null;
+    
+    final userData = Map<String, dynamic>.from(users[email]);
+    return {
+      'name': userData['name'] ?? '',
+      'email': userData['email'] ?? '',
+    };
+  }
+
   // Clear all data (logout)
   Future<void> clearAllData() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove(_userKey);
+    await prefs.remove(_currentUserKey);
   }
 }

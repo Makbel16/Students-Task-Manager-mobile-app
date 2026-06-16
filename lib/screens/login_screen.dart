@@ -21,23 +21,37 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
 
   Future<void> _handleLogin() async {
-    if (_emailController.text.trim().isEmpty) {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty) {
       _showSnackBar('Please enter your email', Colors.red);
       return;
     }
-    if (_passwordController.text.isEmpty) {
+    if (!email.contains('@')) {
+      _showSnackBar('Please enter a valid email', Colors.red);
+      return;
+    }
+    if (password.isEmpty) {
       _showSnackBar('Please enter your password', Colors.red);
       return;
     }
 
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
+
+    // Validate credentials against stored users
+    final userInfo = await _storage.loginUser(email, password);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // Demo login - any email/password works
-    await _storage.saveUserLoggedIn(true);
+    if (userInfo == null) {
+      _showSnackBar('Invalid email or password. Please register first.', Colors.red);
+      return;
+    }
+
+    // Login successful
+    await _storage.saveUserLoggedIn(email);
     
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -48,7 +62,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 
@@ -56,23 +75,43 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.padding),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.task_alt, size: 80, color: AppColors.primary),
-              const SizedBox(height: 20),
+              const SizedBox(height: 40),
+              // Logo
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppColors.primary, AppColors.primary.withOpacity(0.7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.task_alt, size: 60, color: Colors.white),
+              ),
+              const SizedBox(height: 24),
               const Text(
                 'Welcome Back!',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.black),
               ),
               const SizedBox(height: 8),
               Text(
-                'Login to continue',
-                style: TextStyle(color: Colors.grey.shade600),
+                'Login to manage your tasks',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
               ),
               const SizedBox(height: 40),
+              // Email
               CustomTextField(
                 controller: _emailController,
                 label: AppStrings.email,
@@ -80,23 +119,27 @@ class _LoginScreenState extends State<LoginScreen> {
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 16),
+              // Password
               CustomTextField(
                 controller: _passwordController,
                 label: AppStrings.password,
                 icon: Icons.lock_outline,
                 obscureText: _obscurePassword,
                 suffixIcon: IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: Colors.grey,
+                  ),
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
               CustomButton(
                 text: AppStrings.login,
                 onPressed: _handleLogin,
                 isLoading: _isLoading,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -108,7 +151,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         MaterialPageRoute(builder: (context) => const RegisterScreen()),
                       );
                     },
-                    child: const Text('Register', style: TextStyle(color: AppColors.primary)),
+                    child: const Text(
+                      'Register',
+                      style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ],
               ),
