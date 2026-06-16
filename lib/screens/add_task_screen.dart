@@ -8,6 +8,7 @@ import '../services/notification_service.dart';
 import '../utils/constants.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_textfield.dart';
+import 'alarm_ringing_screen.dart';
 
 class AddTaskScreen extends StatefulWidget {
   final Task? task;
@@ -56,6 +57,27 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  void _testAlarm() {
+    // Create a temporary task to test the alarm sound
+    final testTask = Task(
+      id: 'test_alarm_${DateTime.now().millisecondsSinceEpoch}',
+      title: _titleController.text.trim().isEmpty ? 'Test Alarm' : _titleController.text.trim(),
+      description: _descriptionController.text.trim(),
+      dueDate: DateTime.now(),
+      createdAt: DateTime.now(),
+      priority: _selectedPriority,
+      isCompleted: false,
+      alarmEnabled: true,
+      alarmTime: _alarmTime ?? TimeOfDay(hour: DateTime.now().hour, minute: DateTime.now().minute),
+      alarmSoundPath: _alarmSoundPath,
+      alarmSoundName: _alarmSoundName,
+    );
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AlarmRingingScreen(task: testTask)),
+    );
   }
 
   Future<void> _saveTask() async {
@@ -255,6 +277,23 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
             // Save Button
             CustomButton(text: isEditing ? 'Update Task' : 'Add Task', onPressed: _saveTask, isLoading: _isLoading),
+            const SizedBox(height: 12),
+            // Test Alarm Button
+            if (_alarmEnabled && _alarmSoundPath != null)
+              SizedBox(
+                width: double.infinity,
+                height: AppSizes.buttonHeight,
+                child: OutlinedButton.icon(
+                  onPressed: _testAlarm,
+                  icon: const Icon(Icons.volume_up),
+                  label: const Text('Test Alarm Sound Now'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadius)),
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,

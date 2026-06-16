@@ -15,17 +15,20 @@ dependencies:
   shared_preferences: ^2.2.2
   
   # Alarm & Notifications
-  flutter_local_notifications: ^17.2.4
-  timezone: ^0.9.4
-  flutter_timezone: ^3.0.0
+  flutter_local_notifications: ^18.0.0
+  timezone: ^0.10.0
+  flutter_timezone: ^5.0.0
+  audioplayers: ^6.0.0
   
   # File & Permissions
-  file_picker: ^8.1.2
-  permission_handler: ^11.3.1
+  file_picker: ^9.0.0
+  permission_handler: ^12.0.0
+  path_provider: ^2.1.0
   
   # UI & Utilities
   cupertino_icons: ^1.0.8
   flutter_launcher_icons: ^0.13.1  # For custom app icons
+  url_launcher: ^6.2.0  # For opening portfolio link
 
 dev_dependencies:
   flutter_test:

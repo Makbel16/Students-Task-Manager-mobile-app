@@ -3,22 +3,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task_model.dart';
 
 class StorageService {
-  static const String _tasksKey = 'tasks';
   static const String _userKey = 'user_logged_in';
   static const String _currentUserKey = 'current_user_email';
   static const String _registeredUsersKey = 'registered_users';
 
-  // Save all tasks
+  // Get the tasks key for a specific user
+  String _tasksKeyForUser(String email) => 'tasks_$email';
+
+  // Save all tasks for the current user
   Future<void> saveTasks(List<Task> tasks) async {
     final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString(_currentUserKey);
+    if (email == null) return;
     final tasksJson = tasks.map((task) => task.toMap()).toList();
-    await prefs.setString(_tasksKey, jsonEncode(tasksJson));
+    await prefs.setString(_tasksKeyForUser(email), jsonEncode(tasksJson));
   }
 
-  // Load all tasks
+  // Load all tasks for the current user
   Future<List<Task>> loadTasks() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? tasksString = prefs.getString(_tasksKey);
+    final email = prefs.getString(_currentUserKey);
+    if (email == null) return [];
+    final String? tasksString = prefs.getString(_tasksKeyForUser(email));
     
     if (tasksString == null) return [];
     

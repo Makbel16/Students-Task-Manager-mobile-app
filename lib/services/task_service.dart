@@ -95,4 +95,10 @@ class TaskService {
     _tasks = await _storage.loadTasks();
     _isLoaded = true;
   }
+
+  // Reset task list (call on user switch/logout)
+  void reset() {
+    _tasks = [];
+    _isLoaded = false;
+  }
 }

@@ -1,10 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/task_model.dart';
 
 class NotificationService {
@@ -16,21 +19,27 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
+  static const _alarmChannel = MethodChannel('com.example.flutter_application_1/alarm');
+
+  // Callback when alarm triggers (from native or notification tap)
+  Function(String taskId)? onAlarmTriggered;
+
   bool _initialized = false;
 
   // Callback when notification is tapped
   Function(String taskId)? onNotificationTap;
 
   // Initialize the notification service
-  Future<void> initialize({Function(String taskId)? onTap}) async {
+  Future<void> initialize({Function(String taskId)? onTap, Function(String taskId)? onAlarm}) async {
     if (_initialized) return;
 
     onNotificationTap = onTap;
+    onAlarmTriggered = onAlarm;
 
     // Initialize timezone data
     tz_data.initializeTimeZones();
-    final String currentTimeZone = await FlutterTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(currentTimeZone));
+    final currentTimeZone = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(currentTimeZone.identifier));
 
     // Android initialization settings
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -42,11 +51,25 @@ class NotificationService {
       initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         final payload = response.payload ?? '';
+        debugPrint('>>> Notification response received: $payload');
         if (payload.isNotEmpty && onNotificationTap != null) {
           onNotificationTap!(payload);
         }
       },
     );
+
+    // Listen for native alarm triggers
+    _alarmChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onAlarmTriggered') {
+        final taskId = call.arguments as String;
+        debugPrint('>>> Native alarm triggered: $taskId');
+        if (onAlarmTriggered != null) {
+          onAlarmTriggered!(taskId);
+        } else if (onNotificationTap != null) {
+          onNotificationTap!(taskId);
+        }
+      }
+    });
 
     _initialized = true;
   }
@@ -56,6 +79,27 @@ class NotificationService {
     final notifStatus = await Permission.notification.request();
     final alarmStatus = await Permission.scheduleExactAlarm.request();
     return notifStatus.isGranted && alarmStatus.isGranted;
+  }
+
+  // Copy sound file to app cache so it's accessible to notification system
+  Future<String?> _copySoundToCache(String sourcePath) async {
+    try {
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) return null;
+
+      final cacheDir = await getTemporaryDirectory();
+      final alarmDir = Directory('${cacheDir.path}/alarm_sounds');
+      if (!await alarmDir.exists()) {
+        await alarmDir.create(recursive: true);
+      }
+
+      final fileName = sourcePath.split('/').last;
+      final cachedFile = File('${alarmDir.path}/$fileName');
+      await sourceFile.copy(cachedFile.path);
+      return cachedFile.path;
+    } catch (e) {
+      return null;
+    }
   }
 
   // Schedule an alarm notification for a task
@@ -85,7 +129,7 @@ class NotificationService {
     );
 
     // Build notification details
-    final androidDetails = _buildAndroidDetails(task);
+    final androidDetails = await _buildAndroidDetails(task);
     final notifDetails = NotificationDetails(android: androidDetails);
 
     final notifId = task.id.hashCode.abs() % 100000;
@@ -100,41 +144,59 @@ class NotificationService {
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       payload: task.id,
     );
+
+    // Also schedule native alarm to wake screen and auto-open app
+    try {
+      await _alarmChannel.invokeMethod('scheduleNativeAlarm', {
+        'taskId': task.id,
+        'triggerTimeMillis': alarmDateTime.millisecondsSinceEpoch,
+      });
+      debugPrint('>>> Native alarm scheduled for ${alarmDateTime}');
+    } catch (e) {
+      debugPrint('>>> Failed to schedule native alarm: $e');
+    }
   }
 
-  AndroidNotificationDetails _buildAndroidDetails(Task task) {
+  Future<AndroidNotificationDetails> _buildAndroidDetails(Task task) async {
+    // Use unique channel ID per task to avoid channel caching issues
+    final channelId = 'task_alarm_${task.id.hashCode.abs() % 10000}';
+    final channelName = 'Alarm: ${task.title}';
+
     if (task.alarmSoundPath != null && task.alarmSoundPath!.isNotEmpty) {
-      final soundFile = File(task.alarmSoundPath!);
-      if (soundFile.existsSync()) {
+      // Copy sound to app cache for reliable access
+      final cachedPath = await _copySoundToCache(task.alarmSoundPath!);
+
+      if (cachedPath != null) {
         return AndroidNotificationDetails(
-          'task_alarms',
-          'Task Alarms',
-          channelDescription: 'Notifications for task reminders and alarms',
+          channelId,
+          channelName,
+          channelDescription: 'Alarm notification for ${task.title}',
           importance: Importance.max,
           priority: Priority.high,
           fullScreenIntent: true,
           category: AndroidNotificationCategory.alarm,
           playSound: true,
           enableVibration: true,
-          vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
-          sound: UriAndroidNotificationSound('file://${task.alarmSoundPath!}'),
+          vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
+          sound: UriAndroidNotificationSound('file://$cachedPath'),
           ongoing: true,
           autoCancel: false,
         );
       }
     }
 
+    // Default alarm sound (system default)
     return AndroidNotificationDetails(
-      'task_alarms',
-      'Task Alarms',
-      channelDescription: 'Notifications for task reminders and alarms',
+      channelId,
+      channelName,
+      channelDescription: 'Alarm notification for ${task.title}',
       importance: Importance.max,
       priority: Priority.high,
       fullScreenIntent: true,
       category: AndroidNotificationCategory.alarm,
       playSound: true,
       enableVibration: true,
-      vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
+      vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
       ongoing: true,
       autoCancel: false,
     );
@@ -145,6 +207,12 @@ class NotificationService {
     if (!_initialized) return;
     final notifId = taskId.hashCode.abs() % 100000;
     await _notifications.cancel(notifId);
+    // Also cancel native alarm
+    try {
+      await _alarmChannel.invokeMethod('cancelNativeAlarm', {'taskId': taskId});
+    } catch (e) {
+      debugPrint('>>> Failed to cancel native alarm: $e');
+    }
   }
 
   // Cancel all alarms
@@ -163,7 +231,7 @@ class NotificationService {
       notifId,
       task.title,
       'Alarm: ${task.description.isNotEmpty ? task.description : "Time for your task!"}',
-      NotificationDetails(android: _buildAndroidDetails(task)),
+      NotificationDetails(android: await _buildAndroidDetails(task)),
       payload: task.id,
     );
   }

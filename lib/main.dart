@@ -6,6 +6,39 @@ import 'screens/alarm_ringing_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+Future<void> _handleNotificationTap(String taskId) async {
+  debugPrint('>>> Notification tapped for task: $taskId');
+  final taskService = TaskService();
+  final tasks = await taskService.getTasks();
+  debugPrint('>>> Found ${tasks.length} tasks');
+
+  final task = tasks.where((t) => t.id == taskId).firstOrNull;
+  if (task == null) {
+    debugPrint('>>> Task not found!');
+    return;
+  }
+
+  debugPrint('>>> Task found: ${task.title}, sound: ${task.alarmSoundPath}');
+
+  // Wait for navigator to be ready
+  int attempts = 0;
+  while (navigatorKey.currentState == null && attempts < 20) {
+    await Future.delayed(const Duration(milliseconds: 100));
+    attempts++;
+  }
+
+  if (navigatorKey.currentState != null) {
+    debugPrint('>>> Navigating to AlarmRingingScreen');
+    navigatorKey.currentState!.push(
+      MaterialPageRoute(
+        builder: (context) => AlarmRingingScreen(task: task),
+      ),
+    );
+  } else {
+    debugPrint('>>> Navigator not available!');
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -13,17 +46,12 @@ void main() async {
   final notifService = NotificationService();
   await notifService.initialize(
     onTap: (String taskId) async {
-      // When notification is tapped, find the task and show alarm screen
-      final taskService = TaskService();
-      final tasks = await taskService.getTasks();
-      final task = tasks.where((t) => t.id == taskId).firstOrNull;
-      if (task != null && navigatorKey.currentContext != null) {
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(
-            builder: (context) => AlarmRingingScreen(task: task),
-          ),
-        );
-      }
+      debugPrint('>>> onTap callback fired for: $taskId');
+      await _handleNotificationTap(taskId);
+    },
+    onAlarm: (String taskId) async {
+      debugPrint('>>> Native alarm callback fired for: $taskId');
+      await _handleNotificationTap(taskId);
     },
   );
 

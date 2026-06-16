@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/storage_service.dart';
+import '../services/task_service.dart';
+import '../services/notification_service.dart';
 import '../utils/constants.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_textfield.dart';
@@ -50,8 +52,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Login successful
+    // Login successful - reset task service to load this user's tasks
     await _storage.saveUserLoggedIn(email);
+    TaskService().reset();
+    
+    // Reschedule alarms for the logged-in user
+    final userTasks = await TaskService().getTasks();
+    await NotificationService().rescheduleAllAlarms(userTasks);
     
     if (!mounted) return;
     Navigator.pushReplacement(

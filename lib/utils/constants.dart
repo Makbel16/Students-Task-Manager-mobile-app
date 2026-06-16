@@ -11,6 +11,8 @@ class AppColors {
   static const orange = Color(0xFFFFA726);
   static const green = Color(0xFF4CAF50);
   static const purple = Color(0xFF9C27B0);
+  static const textPrimary = Color(0xFF2C3E50);
+  static const textSecondary = Color(0xFF7F8C8D);
 }
 
 class AppStrings {
