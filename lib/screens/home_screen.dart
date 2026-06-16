@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/task_model.dart';
 import '../services/task_service.dart';
+import '../services/notification_service.dart';
 import '../utils/constants.dart';
 import 'add_task_screen.dart';
 import 'profile_screen.dart';
@@ -235,8 +236,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
       },
       onDismissed: (direction) async {
+        await NotificationService().cancelTaskAlarm(task.id);
         await _taskService.deleteTask(task.id);
         _loadTasks();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('"${task.title}" deleted'),
@@ -288,7 +291,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (task.description.isNotEmpty) ...[
+                      // Alarm indicator
+                      if (task.alarmEnabled && task.alarmTime != null && !task.isCompleted)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Row(
+                            children: [
+                              Icon(Icons.alarm, size: 12, color: AppColors.primary),
+                              const SizedBox(width: 3),
+                              Text(
+                                task.alarmTime!.format(),
+                                style: TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (task.description.isNotEmpty && !(task.alarmEnabled && task.alarmTime != null && !task.isCompleted)) ...[
                         const SizedBox(height: 2),
                         Text(
                           task.description,
@@ -430,6 +448,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
     );
     if (confirm == true) {
+      await NotificationService().cancelTaskAlarm(task.id);
       await _taskService.deleteTask(task.id);
       _loadTasks();
       if (!mounted) return;

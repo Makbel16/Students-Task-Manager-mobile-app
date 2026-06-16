@@ -97,6 +97,7 @@ class NotificationService {
       scheduledDate,
       notifDetails,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       payload: task.id,
     );
   }
@@ -116,14 +117,14 @@ class NotificationService {
           playSound: true,
           enableVibration: true,
           vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
-          sound: FilePathAndroidNotificationSound(task.alarmSoundPath!),
+          sound: UriAndroidNotificationSound('file://${task.alarmSoundPath!}'),
           ongoing: true,
           autoCancel: false,
         );
       }
     }
 
-    return const AndroidNotificationDetails(
+    return AndroidNotificationDetails(
       'task_alarms',
       'Task Alarms',
       channelDescription: 'Notifications for task reminders and alarms',

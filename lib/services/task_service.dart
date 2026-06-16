@@ -1,5 +1,6 @@
 import '../models/task_model.dart';
 import 'storage_service.dart';
+import 'notification_service.dart';
 
 class TaskService {
   // Singleton pattern
@@ -45,6 +46,7 @@ class TaskService {
   // Delete a task
   Future<void> deleteTask(String taskId) async {
     await _ensureLoaded();
+    await NotificationService().cancelTaskAlarm(taskId);
     _tasks.removeWhere((task) => task.id == taskId);
     await _storage.saveTasks(_tasks);
   }
@@ -58,6 +60,10 @@ class TaskService {
         isCompleted: !_tasks[index].isCompleted,
       );
       await _storage.saveTasks(_tasks);
+      // Cancel alarm if task is now completed
+      if (_tasks[index].isCompleted) {
+        await NotificationService().cancelTaskAlarm(taskId);
+      }
     }
   }
 

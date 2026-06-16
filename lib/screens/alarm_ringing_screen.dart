@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide TimeOfDay;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/task_model.dart';
@@ -26,11 +26,8 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
   @override
   void initState() {
     super.initState();
-
-    // Keep screen on
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
 
-    // Pulse animation for alarm icon
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -39,18 +36,13 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Vibrate phone
     _startVibration();
   }
 
   void _startVibration() {
     HapticFeedback.heavyImpact();
-    Future.delayed(const Duration(milliseconds: 500), () {
-      HapticFeedback.heavyImpact();
-    });
-    Future.delayed(const Duration(milliseconds: 1000), () {
-      HapticFeedback.heavyImpact();
-    });
+    Future.delayed(const Duration(milliseconds: 500), () => HapticFeedback.heavyImpact());
+    Future.delayed(const Duration(milliseconds: 1000), () => HapticFeedback.heavyImpact());
   }
 
   @override
@@ -61,13 +53,9 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
   }
 
   Future<void> _dismissAlarm() async {
-    // Cancel the notification
     await _notifService.cancelTaskAlarm(widget.task.id);
-
     if (!mounted) return;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
-    // Navigate to home screen
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -76,41 +64,28 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
   }
 
   Future<void> _snoozeAlarm() async {
-    // Snooze for 5 minutes
+    final snoozeTime = DateTime.now().add(const Duration(minutes: 5));
     final snoozeTask = widget.task.copyWith(
-      alarmTime: TimeOfDay(
-        hour: DateTime.now().add(const Duration(minutes: 5)).hour,
-        minute: DateTime.now().add(const Duration(minutes: 5)).minute,
-      ),
+      dueDate: snoozeTime,
+      alarmTime: TimeOfDay(hour: snoozeTime.hour, minute: snoozeTime.minute),
     );
-
     await _notifService.cancelTaskAlarm(widget.task.id);
     await _notifService.scheduleTaskAlarm(snoozeTask);
 
     if (!mounted) return;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const HomeScreen()),
       (route) => false,
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Alarm snoozed for 5 minutes'),
-        behavior: SnackBarBehavior.floating,
-      ),
     );
   }
 
   Future<void> _markComplete() async {
     await _taskService.toggleTaskStatus(widget.task.id);
     await _notifService.cancelTaskAlarm(widget.task.id);
-
     if (!mounted) return;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -130,11 +105,7 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
-              const Color(0xFF2C3E50),
-            ],
+            colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8), const Color(0xFF2C3E50)],
           ),
         ),
         child: SafeArea(
@@ -143,57 +114,41 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                // Alarm icon with pulse animation
+                // Pulsing alarm icon
                 AnimatedBuilder(
                   animation: _pulseAnimation,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _pulseAnimation.value,
-                      child: Container(
-                        padding: const EdgeInsets.all(30),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.alarm,
-                          size: 80,
-                          color: Colors.white,
-                        ),
+                  builder: (context, child) => Transform.scale(
+                    scale: _pulseAnimation.value,
+                    child: Container(
+                      padding: const EdgeInsets.all(30),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
                       ),
-                    );
-                  },
+                      child: const Icon(Icons.alarm, size: 80, color: Colors.white),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 30),
-
                 // Current time
                 Text(
                   DateFormat('HH:mm').format(DateTime.now()),
-                  style: const TextStyle(
-                    fontSize: 64,
-                    fontWeight: FontWeight.w200,
-                    color: Colors.white,
-                    letterSpacing: 4,
-                  ),
+                  style: const TextStyle(fontSize: 64, fontWeight: FontWeight.w200, color: Colors.white, letterSpacing: 4),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   DateFormat('EEEE, MMMM dd').format(DateTime.now()),
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.8)),
                 ),
                 const SizedBox(height: 40),
-
                 // Task info card
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,91 +158,50 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: priorityColor.withOpacity(0.3),
+                              color: priorityColor.withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               _getPriorityText(task.priority),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                             ),
                           ),
                           if (task.alarmTime != null) ...[
                             const Spacer(),
-                            Icon(Icons.alarm, color: Colors.white.withOpacity(0.8), size: 18),
+                            Icon(Icons.alarm, color: Colors.white.withValues(alpha: 0.8), size: 18),
                             const SizedBox(width: 4),
-                            Text(
-                              task.alarmTime!.format(),
-                              style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
-                            ),
+                            Text(task.alarmTime!.format(), style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14)),
                           ],
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        task.title,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                      Text(task.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                       if (task.description.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        Text(
-                          task.description,
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
+                        Text(task.description, style: TextStyle(fontSize: 15, color: Colors.white.withValues(alpha: 0.8))),
                       ],
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          Icon(Icons.calendar_today, size: 16, color: Colors.white.withOpacity(0.7)),
+                          Icon(Icons.calendar_today, size: 16, color: Colors.white.withValues(alpha: 0.7)),
                           const SizedBox(width: 6),
-                          Text(
-                            DateFormat('MMM dd, yyyy').format(task.dueDate),
-                            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
-                          ),
+                          Text(DateFormat('MMM dd, yyyy').format(task.dueDate),
+                              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13)),
                         ],
                       ),
                     ],
                   ),
                 ),
-
                 const Spacer(),
-
                 // Action buttons
                 Row(
                   children: [
-                    // Snooze
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.snooze,
-                        label: 'Snooze 5m',
-                        onTap: _snoozeAlarm,
-                        color: AppColors.orange,
-                      ),
-                    ),
+                    Expanded(child: _buildActionButton(Icons.snooze, 'Snooze 5m', _snoozeAlarm, AppColors.orange)),
                     const SizedBox(width: 12),
-                    // Complete
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.check_circle_outline,
-                        label: 'Complete',
-                        onTap: _markComplete,
-                        color: AppColors.green,
-                      ),
-                    ),
+                    Expanded(child: _buildActionButton(Icons.check_circle_outline, 'Complete', _markComplete, AppColors.green)),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Dismiss
                 SizedBox(
                   width: double.infinity,
                   height: 56,
@@ -309,21 +223,16 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    required Color color,
-  }) {
+  Widget _buildActionButton(IconData icon, String label, VoidCallback onTap, Color color) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.2),
+          color: color.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.4)),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Column(
           children: [
@@ -352,37 +261,5 @@ class _AlarmRingingScreenState extends State<AlarmRingingScreen>
       case 3: return 'High';
       default: return 'Normal';
     }
-  }
-}
-
-// AnimatedBuilder helper
-class AnimatedBuilder extends StatelessWidget {
-  final Animation<double> animation;
-  final Widget Function(BuildContext, Widget?) builder;
-
-  const AnimatedBuilder({
-    super.key,
-    required this.animation,
-    required this.builder,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder2(animation: animation, builder: builder);
-  }
-}
-
-class AnimatedBuilder2 extends AnimatedWidget {
-  final Widget Function(BuildContext, Widget?) builder;
-
-  const AnimatedBuilder2({
-    super.key,
-    required Animation<double> animation,
-    required this.builder,
-  }) : super(listenable: animation);
-
-  @override
-  Widget build(BuildContext context) {
-    return builder(context, null);
   }
 }

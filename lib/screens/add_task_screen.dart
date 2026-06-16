@@ -1,7 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as mat;
+import 'package:flutter/material.dart' hide TimeOfDay;
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/task_model.dart';
 import '../services/task_service.dart';
+import '../services/notification_service.dart';
 import '../utils/constants.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_textfield.dart';
@@ -19,9 +22,16 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final TaskService _taskService = TaskService();
+  final NotificationService _notifService = NotificationService();
   DateTime _selectedDate = DateTime.now();
   int _selectedPriority = 2;
   bool _isLoading = false;
+
+  // Alarm fields
+  bool _alarmEnabled = false;
+  TimeOfDay? _alarmTime;
+  String? _alarmSoundPath;
+  String? _alarmSoundName;
 
   bool get isEditing => widget.task != null;
 
@@ -29,10 +39,15 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   void initState() {
     super.initState();
     if (isEditing) {
-      _titleController.text = widget.task!.title;
-      _descriptionController.text = widget.task!.description;
-      _selectedDate = widget.task!.dueDate;
-      _selectedPriority = widget.task!.priority;
+      final task = widget.task!;
+      _titleController.text = task.title;
+      _descriptionController.text = task.description;
+      _selectedDate = task.dueDate;
+      _selectedPriority = task.priority;
+      _alarmEnabled = task.alarmEnabled;
+      _alarmTime = task.alarmTime;
+      _alarmSoundPath = task.alarmSoundPath;
+      _alarmSoundName = task.alarmSoundName;
     }
   }
 
@@ -49,6 +64,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       _showSnackBar('Please enter a task title', Colors.red);
       return;
     }
+    if (_alarmEnabled && _alarmTime == null) {
+      _showSnackBar('Please set an alarm time', Colors.red);
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -59,8 +78,19 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
           description: _descriptionController.text.trim(),
           dueDate: _selectedDate,
           priority: _selectedPriority,
+          alarmEnabled: _alarmEnabled,
+          alarmTime: _alarmTime,
+          clearAlarmTime: !_alarmEnabled,
+          alarmSoundPath: _alarmSoundPath,
+          alarmSoundName: _alarmSoundName,
+          clearAlarmSound: _alarmSoundPath == null,
         );
         await _taskService.updateTask(updatedTask);
+        if (_alarmEnabled) {
+          await _notifService.scheduleTaskAlarm(updatedTask);
+        } else {
+          await _notifService.cancelTaskAlarm(updatedTask.id);
+        }
         _showSnackBar('Task updated successfully!', AppColors.green);
       } else {
         final newTask = Task(
@@ -71,8 +101,15 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
           isCompleted: false,
           priority: _selectedPriority,
           createdAt: DateTime.now(),
+          alarmEnabled: _alarmEnabled,
+          alarmTime: _alarmTime,
+          alarmSoundPath: _alarmSoundPath,
+          alarmSoundName: _alarmSoundName,
         );
         await _taskService.addTask(newTask);
+        if (_alarmEnabled) {
+          await _notifService.scheduleTaskAlarm(newTask);
+        }
         _showSnackBar('Task added successfully!', AppColors.green);
       }
 
@@ -81,30 +118,26 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Error saving task. Please try again.', Colors.red);
+      _showSnackBar('Error saving task: $e', Colors.red);
     }
   }
 
   Future<void> _deleteTask() async {
     if (!isEditing) return;
-
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Task'),
-        content: Text('Are you sure you want to delete "${widget.task!.title}"?'),
+        content: Text('Delete "${widget.task!.title}"?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.red)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: AppColors.red))),
         ],
       ),
     );
-
     if (confirm == true) {
       setState(() => _isLoading = true);
+      await _notifService.cancelTaskAlarm(widget.task!.id);
       await _taskService.deleteTask(widget.task!.id);
       _showSnackBar('Task deleted!', AppColors.red);
       await Future.delayed(const Duration(milliseconds: 400));
@@ -120,19 +153,51 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
+    if (picked != null) setState(() => _selectedDate = picked);
+  }
+
+  Future<void> _selectTime() async {
+    final initHour = _alarmTime?.hour ?? DateTime.now().hour;
+    final initMinute = _alarmTime?.minute ?? DateTime.now().minute;
+    final flutterTime = await showTimePicker(
+      context: context,
+      initialTime: mat.TimeOfDay(hour: initHour, minute: initMinute),
+    );
+    if (flutterTime != null) {
+      setState(() {
+        _alarmTime = TimeOfDay(hour: flutterTime.hour, minute: flutterTime.minute);
+      });
     }
+  }
+
+  Future<void> _pickSound() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: false,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        setState(() {
+          _alarmSoundPath = result.files.first.path;
+          _alarmSoundName = result.files.first.name;
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Error picking sound file', Colors.red);
+    }
+  }
+
+  void _removeSound() {
+    setState(() {
+      _alarmSoundPath = null;
+      _alarmSoundName = null;
+    });
   }
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
+      SnackBar(content: Text(message), backgroundColor: color, behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
     );
   }
 
@@ -146,11 +211,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (isEditing)
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.white),
-              onPressed: _deleteTask,
-            ),
+          if (isEditing) IconButton(icon: const Icon(Icons.delete_outline, color: Colors.white), onPressed: _deleteTask),
         ],
       ),
       body: SingleChildScrollView(
@@ -159,94 +220,49 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Title
-            const Text('Task Title', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            _sectionLabel('Task Title'),
             const SizedBox(height: 8),
-            CustomTextField(
-              controller: _titleController,
-              label: 'Enter task title',
-              icon: Icons.title,
-            ),
+            CustomTextField(controller: _titleController, label: 'Enter task title', icon: Icons.title),
             const SizedBox(height: 20),
 
             // Description
-            const Text('Description', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            _sectionLabel('Description'),
             const SizedBox(height: 8),
-            CustomTextField(
-              controller: _descriptionController,
-              label: 'Enter description (optional)',
-              icon: Icons.description_outlined,
-              maxLines: 4,
-            ),
+            CustomTextField(controller: _descriptionController, label: 'Enter description (optional)', icon: Icons.description_outlined, maxLines: 4),
             const SizedBox(height: 20),
 
-            // Due Date Picker
-            const Text('Due Date', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            // Due Date
+            _sectionLabel('Due Date'),
             const SizedBox(height: 8),
-            InkWell(
-              onTap: _selectDate,
-              borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.calendar_today, color: AppColors.primary, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        DateFormat('EEEE, MMM dd, yyyy').format(_selectedDate),
-                        style: const TextStyle(fontSize: 15),
-                      ),
-                    ),
-                    const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-                  ],
-                ),
-              ),
-            ),
+            _buildDatePicker(),
             const SizedBox(height: 20),
 
-            // Priority Selection
-            const Text('Priority Level', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            // Priority
+            _sectionLabel('Priority Level'),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                _buildPriorityOption(1, 'Low', Icons.arrow_downward, AppColors.green),
-                const SizedBox(width: 12),
-                _buildPriorityOption(2, 'Medium', Icons.remove, AppColors.orange),
-                const SizedBox(width: 12),
-                _buildPriorityOption(3, 'High', Icons.arrow_upward, AppColors.red),
-              ],
-            ),
+            Row(children: [
+              _buildPriorityOption(1, 'Low', Icons.arrow_downward, AppColors.green),
+              const SizedBox(width: 12),
+              _buildPriorityOption(2, 'Medium', Icons.remove, AppColors.orange),
+              const SizedBox(width: 12),
+              _buildPriorityOption(3, 'High', Icons.arrow_upward, AppColors.red),
+            ]),
+            const SizedBox(height: 20),
+
+            // Alarm Section
+            _buildAlarmSection(),
             const SizedBox(height: 32),
 
             // Save Button
-            CustomButton(
-              text: isEditing ? 'Update Task' : 'Add Task',
-              onPressed: _saveTask,
-              isLoading: _isLoading,
-            ),
+            CustomButton(text: isEditing ? 'Update Task' : 'Add Task', onPressed: _saveTask, isLoading: _isLoading),
             const SizedBox(height: 16),
-
-            // Cancel Button
             SizedBox(
               width: double.infinity,
               height: AppSizes.buttonHeight,
               child: OutlinedButton(
                 onPressed: () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey,
-                  side: BorderSide(color: Colors.grey.shade300),
+                  foregroundColor: Colors.grey, side: BorderSide(color: Colors.grey.shade300),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadius)),
                 ),
                 child: const Text('Cancel', style: TextStyle(fontSize: 16)),
@@ -254,6 +270,135 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(text, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14));
+  }
+
+  Widget _buildDatePicker() {
+    return InkWell(
+      onTap: _selectDate,
+      borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white, border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.calendar_today, color: AppColors.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(DateFormat('EEEE, MMM dd, yyyy').format(_selectedDate), style: const TextStyle(fontSize: 15))),
+          const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildAlarmSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white, borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _alarmEnabled ? AppColors.primary : Colors.grey.shade300),
+        boxShadow: [
+          if (_alarmEnabled) BoxShadow(color: AppColors.primary.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Toggle row
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _alarmEnabled ? AppColors.primary.withValues(alpha: 0.1) : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.alarm, color: _alarmEnabled ? AppColors.primary : Colors.grey, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('Set Alarm Reminder', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+            Switch(value: _alarmEnabled, onChanged: (v) => setState(() => _alarmEnabled = v), activeColor: AppColors.primary),
+          ]),
+
+          if (_alarmEnabled) ...[
+            const SizedBox(height: 16),
+            Divider(color: Colors.grey.shade200),
+            const SizedBox(height: 12),
+
+            // Time picker
+            _sectionLabel('Alarm Time'),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _selectTime,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.access_time, color: AppColors.primary, size: 22),
+                  const SizedBox(width: 12),
+                  Text(
+                    _alarmTime != null ? _alarmTime!.format() : 'Select alarm time',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: _alarmTime != null ? Colors.black87 : Colors.grey),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Sound picker
+            _sectionLabel('Alarm Sound'),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _pickSound,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(children: [
+                  Icon(
+                    _alarmSoundPath != null ? Icons.music_note : Icons.audiotrack_outlined,
+                    color: _alarmSoundPath != null ? AppColors.green : Colors.grey, size: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _alarmSoundName ?? 'Pick sound from device',
+                      style: TextStyle(fontSize: 14, color: _alarmSoundName != null ? Colors.black87 : Colors.grey),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (_alarmSoundPath != null)
+                    InkWell(onTap: _removeSound, child: const Icon(Icons.close, size: 18, color: Colors.red))
+                  else
+                    const Icon(Icons.folder_outlined, size: 18, color: Colors.grey),
+                ]),
+              ),
+            ),
+            if (_alarmSoundPath == null) ...[
+              const SizedBox(height: 6),
+              Text('Default system alarm sound will be used', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+            ],
+          ],
+        ],
       ),
     );
   }
@@ -268,27 +413,18 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.15) : Colors.white,
+            color: isSelected ? color.withValues(alpha: 0.15) : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? color : Colors.grey.shade300,
-              width: isSelected ? 2 : 1,
-            ),
+            border: Border.all(color: isSelected ? color : Colors.grey.shade300, width: isSelected ? 2 : 1),
           ),
-          child: Column(
-            children: [
-              Icon(icon, color: isSelected ? color : Colors.grey, size: 20),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? color : Colors.grey.shade700,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
+          child: Column(children: [
+            Icon(icon, color: isSelected ? color : Colors.grey, size: 20),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(
+              color: isSelected ? color : Colors.grey.shade700,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 13,
+            )),
+          ]),
         ),
       ),
     );
